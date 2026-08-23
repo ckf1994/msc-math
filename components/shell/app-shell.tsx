@@ -205,7 +205,7 @@ function getMobileNav(role: UserRole): SidebarNavItem[] {
     { href: "/admin/users", label: "Users", icon: Users },
     { href: "/admin/questions", label: "Questions", icon: BookOpen },
     { href: "/admin/quizzes", label: "Quizzes", icon: Zap },
-    { href: "/admin/badges", label: "Badges", icon: Trophy },
+    { href: "/admin/analytics", label: "Analytics", icon: Trophy },
   ];
 }
 

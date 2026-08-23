@@ -3,6 +3,7 @@ import { ChevronLeft, Filter } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { formatQuestionId } from "@/lib/questions/format-question-id";
+import { McqOptionStatsPanel } from "@/components/admin/mcq-option-stats";
 
 type TopicRecord = {
   id: string;
@@ -11,6 +12,8 @@ type TopicRecord = {
   topic_name: string;
   sort_order: number;
 };
+
+type PastPaperSource = "MSC" | "DSE" | "HKCEE" | "HKAE" | "other";
 
 type QuestionRow = {
   id: string;
@@ -24,6 +27,8 @@ type QuestionRow = {
   metadata: {
     formLevel?: number | null;
     chapterName?: string | null;
+    pastPaper?: PastPaperSource | null;
+    pastPaperYear?: number | null;
   } | null;
   topic:
     | {
@@ -41,9 +46,14 @@ type QuestionRow = {
     | null;
   options:
     | {
+        id: string;
         option_text: string | null;
         is_correct: boolean;
         sort_order: number;
+        stats:
+          | { selection_count: number | null }
+          | { selection_count: number | null }[]
+          | null;
       }[]
     | null;
   short_answer_rules:
@@ -64,8 +74,24 @@ type PageProps = {
     type?: string;
     difficulty?: string;
     active?: string;
+    pastPaper?: string;
+    pastPaperYear?: string;
   }>;
 };
+
+const FORM_LEVELS = [1, 2, 3, 4, 5, 6];
+const PAST_PAPER_OPTIONS: { value: PastPaperSource | "none"; label: string }[] = [
+  { value: "MSC", label: "MSC" },
+  { value: "DSE", label: "DSE" },
+  { value: "HKCEE", label: "HKCEE" },
+  { value: "HKAE", label: "HKAE" },
+  { value: "other", label: "Other" },
+  { value: "none", label: "No past paper" },
+];
+const PAST_PAPER_YEARS = Array.from(
+  { length: 2026 - 2000 + 1 },
+  (_, index) => 2026 - index,
+);
 
 export default async function AdminQuestionsListPage({ searchParams }: PageProps) {
   await requireAdmin();
@@ -99,9 +125,13 @@ export default async function AdminQuestionsListPage({ searchParams }: PageProps
           topic_name
         ),
         options:question_options (
+          id,
           option_text,
           is_correct,
-          sort_order
+          sort_order,
+          stats:question_option_stats (
+            selection_count
+          )
         ),
         short_answer_rules (
           accepted_answer,
@@ -116,19 +146,49 @@ export default async function AdminQuestionsListPage({ searchParams }: PageProps
   const allQuestions = ((questions ?? []) as QuestionRow[]).map((question) => ({
     ...question,
     topic: Array.isArray(question.topic) ? (question.topic[0] ?? null) : question.topic,
-    options: question.options ?? [],
+    options: (question.options ?? []).map((option) => {
+      const stats = Array.isArray(option.stats) ? option.stats[0] : option.stats;
+      return {
+        id: option.id,
+        option_text: option.option_text,
+        is_correct: option.is_correct,
+        sort_order: option.sort_order,
+        selection_count: stats?.selection_count ?? 0,
+      };
+    }),
     short_answer_rules: question.short_answer_rules ?? [],
   }));
 
+  const chapterSortOrder = new Map<string, number>();
+  for (const topic of allTopics) {
+    if (params.formLevel && String(topic.form_level) !== params.formLevel) continue;
+    const existing = chapterSortOrder.get(topic.chapter_name);
+    if (existing === undefined || topic.sort_order < existing) {
+      chapterSortOrder.set(topic.chapter_name, topic.sort_order);
+    }
+  }
+
   const chapters = Array.from(
-    new Set(
-      allTopics
+    new Set([
+      ...allTopics
         .filter((topic) =>
           params.formLevel ? String(topic.form_level) === params.formLevel : true,
         )
         .map((topic) => topic.chapter_name),
-    ),
-  ).sort();
+      ...allQuestions
+        .filter((question) => {
+          const formLevel = question.topic?.form_level ?? question.metadata?.formLevel;
+          return params.formLevel ? String(formLevel ?? "") === params.formLevel : true;
+        })
+        .map((question) => question.topic?.chapter_name ?? question.metadata?.chapterName)
+        .filter((chapter): chapter is string => Boolean(chapter)),
+    ]),
+  ).sort((a, b) => {
+    const orderA = chapterSortOrder.get(a) ?? Number.MAX_SAFE_INTEGER;
+    const orderB = chapterSortOrder.get(b) ?? Number.MAX_SAFE_INTEGER;
+    if (orderA !== orderB) return orderA - orderB;
+    return a.localeCompare(b);
+  });
 
   const filteredTopics = allTopics.filter((topic) => {
     const matchesForm = params.formLevel
@@ -142,11 +202,17 @@ export default async function AdminQuestionsListPage({ searchParams }: PageProps
 
   const filteredQuestions = allQuestions.filter((question) => {
     const textBlob = [
+      formatQuestionId(question.id),
+      question.id,
       question.content_text,
       question.explanation_text,
       question.topic?.topic_name,
       question.topic?.chapter_name,
       question.metadata?.chapterName,
+      question.metadata?.pastPaper,
+      question.metadata?.pastPaperYear,
+      ...question.options.map((option) => option.option_text),
+      ...question.short_answer_rules.map((rule) => rule.accepted_answer),
     ]
       .filter(Boolean)
       .join(" ")
@@ -174,6 +240,15 @@ export default async function AdminQuestionsListPage({ searchParams }: PageProps
         : params.active === "inactive"
           ? !question.is_active
           : true;
+    const matchesPastPaper =
+      !params.pastPaper
+        ? true
+        : params.pastPaper === "none"
+          ? !question.metadata?.pastPaper
+          : question.metadata?.pastPaper === params.pastPaper;
+    const matchesPastPaperYear = params.pastPaperYear
+      ? String(question.metadata?.pastPaperYear ?? "") === params.pastPaperYear
+      : true;
 
     return (
       matchesQuery &&
@@ -182,7 +257,9 @@ export default async function AdminQuestionsListPage({ searchParams }: PageProps
       matchesTopic &&
       matchesType &&
       matchesDifficulty &&
-      matchesActive
+      matchesActive &&
+      matchesPastPaper &&
+      matchesPastPaperYear
     );
   });
 
@@ -199,8 +276,7 @@ export default async function AdminQuestionsListPage({ searchParams }: PageProps
         <p className="mt-4 text-sm text-msc-muted">Question bank</p>
         <h1 className="mt-1 text-2xl font-bold text-msc-ink">View Questions</h1>
         <p className="mt-2 max-w-3xl text-sm text-msc-muted">
-          Filter by form, chapter, topic, type, difficulty, and status to find
-          questions quickly.
+          Filter by form, chapter, topic, past paper, type, difficulty, and status.
         </p>
       </div>
 
@@ -209,29 +285,30 @@ export default async function AdminQuestionsListPage({ searchParams }: PageProps
           <Filter className="h-4 w-4 text-msc-red" />
           <h2 className="text-lg font-semibold text-msc-ink">Filters</h2>
         </div>
-        <form className="grid gap-4 lg:grid-cols-4">
+        <form method="get" className="grid gap-4 lg:grid-cols-4">
           <input
             name="q"
+            key={`q-${params.q ?? ""}`}
             defaultValue={params.q ?? ""}
-            placeholder="Search question text"
+            placeholder="Search text or question ID"
             className={fieldClassName()}
           />
           <select
             name="formLevel"
+            key={`form-${params.formLevel ?? ""}`}
             defaultValue={params.formLevel ?? ""}
             className={fieldClassName()}
           >
             <option value="">All forms</option>
-            {Array.from(new Set(allTopics.map((topic) => topic.form_level)))
-              .sort()
-              .map((formLevel) => (
-                <option key={formLevel} value={String(formLevel)}>
-                  {`F.${formLevel}`}
-                </option>
-              ))}
+            {FORM_LEVELS.map((formLevel) => (
+              <option key={formLevel} value={String(formLevel)}>
+                {`F.${formLevel}`}
+              </option>
+            ))}
           </select>
           <select
             name="chapterName"
+            key={`chapter-${params.chapterName ?? ""}`}
             defaultValue={params.chapterName ?? ""}
             className={fieldClassName()}
           >
@@ -244,6 +321,7 @@ export default async function AdminQuestionsListPage({ searchParams }: PageProps
           </select>
           <select
             name="topicId"
+            key={`topic-${params.topicId ?? ""}`}
             defaultValue={params.topicId ?? ""}
             className={fieldClassName()}
           >
@@ -255,7 +333,34 @@ export default async function AdminQuestionsListPage({ searchParams }: PageProps
             ))}
           </select>
           <select
+            name="pastPaper"
+            key={`past-${params.pastPaper ?? ""}`}
+            defaultValue={params.pastPaper ?? ""}
+            className={fieldClassName()}
+          >
+            <option value="">All past papers</option>
+            {PAST_PAPER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <select
+            name="pastPaperYear"
+            key={`year-${params.pastPaperYear ?? ""}`}
+            defaultValue={params.pastPaperYear ?? ""}
+            className={fieldClassName()}
+          >
+            <option value="">All years</option>
+            {PAST_PAPER_YEARS.map((year) => (
+              <option key={year} value={String(year)}>
+                {year}
+              </option>
+            ))}
+          </select>
+          <select
             name="type"
+            key={`type-${params.type ?? ""}`}
             defaultValue={params.type ?? ""}
             className={fieldClassName()}
           >
@@ -265,6 +370,7 @@ export default async function AdminQuestionsListPage({ searchParams }: PageProps
           </select>
           <select
             name="difficulty"
+            key={`diff-${params.difficulty ?? ""}`}
             defaultValue={params.difficulty ?? ""}
             className={fieldClassName()}
           >
@@ -275,6 +381,7 @@ export default async function AdminQuestionsListPage({ searchParams }: PageProps
           </select>
           <select
             name="active"
+            key={`active-${params.active ?? ""}`}
             defaultValue={params.active ?? ""}
             className={fieldClassName()}
           >
@@ -282,7 +389,7 @@ export default async function AdminQuestionsListPage({ searchParams }: PageProps
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
           </select>
-          <div className="flex gap-3">
+          <div className="flex gap-3 lg:col-span-3">
             <button
               type="submit"
               className="h-11 rounded-xl bg-msc-red px-5 text-sm font-semibold text-white"
@@ -323,6 +430,16 @@ export default async function AdminQuestionsListPage({ searchParams }: PageProps
                 <Pill>{formatQuestionId(question.id)}</Pill>
                 <Pill>{question.type === "mcq" ? "MCQ" : "Short answer"}</Pill>
                 {question.difficulty ? <Pill>{question.difficulty}</Pill> : null}
+                {question.metadata?.pastPaper ? (
+                  <Pill>
+                    {question.metadata.pastPaper === "other"
+                      ? "Other past paper"
+                      : question.metadata.pastPaper}
+                    {question.metadata.pastPaperYear
+                      ? ` ${question.metadata.pastPaperYear}`
+                      : ""}
+                  </Pill>
+                ) : null}
                 <Pill>{question.is_active ? "Active" : "Inactive"}</Pill>
                 {question.topic ? (
                   <>
@@ -354,14 +471,14 @@ export default async function AdminQuestionsListPage({ searchParams }: PageProps
                     {question.content_text || "Image-only question"}
                   </p>
                   {question.content_image_url ? (
-                    <a
-                      href={question.content_image_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-2 inline-block text-sm font-medium text-msc-red"
-                    >
-                      Open question image
-                    </a>
+                    <div className="mt-3">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={question.content_image_url}
+                        alt={`Question image for ${formatQuestionId(question.id)}`}
+                        className="max-h-72 w-auto max-w-full rounded-2xl border border-gray-100 object-contain"
+                      />
+                    </div>
                   ) : null}
                 </div>
 
@@ -389,6 +506,21 @@ export default async function AdminQuestionsListPage({ searchParams }: PageProps
                           ) : null}
                         </div>
                       ))}
+                    </div>
+                    <div className="mt-4 rounded-2xl border border-gray-100 bg-gray-50 p-4">
+                      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-msc-muted">
+                        Live student selections
+                      </p>
+                      <McqOptionStatsPanel
+                        compact
+                        question={{
+                          id: question.id,
+                          content_text: question.content_text,
+                          difficulty: question.difficulty,
+                          topic_name: question.topic?.topic_name ?? null,
+                          options: question.options,
+                        }}
+                      />
                     </div>
                   </div>
                 ) : (
@@ -442,4 +574,3 @@ function Pill({ children }: { children: React.ReactNode }) {
     </span>
   );
 }
-

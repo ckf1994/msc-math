@@ -5,13 +5,74 @@ import { randomUUID } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import type { Difficulty, QuestionType } from "@/types/database";
-import type { CreateQuestionState } from "@/components/question-bank/question-form-state";
+import type {
+  CreateQuestionState,
+  CreateQuestionValues,
+} from "@/components/question-bank/question-form-state";
 
 const QUESTION_ASSETS_BUCKET = "question-assets";
+
+function readString(formData: FormData, key: string) {
+  return String(formData.get(key) ?? "");
+}
+
+function captureFormValues(formData: FormData): CreateQuestionValues {
+  const typeValue = normalize(formData.get("type"));
+  const answerTypeValue = normalize(formData.get("answerType"));
+
+  return {
+    formLevel: readString(formData, "formLevel"),
+    chapterName: readString(formData, "chapterName"),
+    topicId: readString(formData, "topicId"),
+    difficulty: readString(formData, "difficulty"),
+    type: typeValue === "short_answer" ? "short_answer" : "mcq",
+    pastPaper: readString(formData, "pastPaper"),
+    pastPaperYear: readString(formData, "pastPaperYear"),
+    contentText: readString(formData, "contentText"),
+    explanationText: readString(formData, "explanationText"),
+    optionText0: readString(formData, "optionText0"),
+    optionText1: readString(formData, "optionText1"),
+    optionText2: readString(formData, "optionText2"),
+    optionText3: readString(formData, "optionText3"),
+    optionImageUrl0: readString(formData, "optionImageUrl0"),
+    optionImageUrl1: readString(formData, "optionImageUrl1"),
+    optionImageUrl2: readString(formData, "optionImageUrl2"),
+    optionImageUrl3: readString(formData, "optionImageUrl3"),
+    optionCorrect0: parseBoolean(formData.get("optionCorrect0")),
+    optionCorrect1: parseBoolean(formData.get("optionCorrect1")),
+    optionCorrect2: parseBoolean(formData.get("optionCorrect2")),
+    optionCorrect3: parseBoolean(formData.get("optionCorrect3")),
+    acceptedAnswers: readString(formData, "acceptedAnswers"),
+    answerType: answerTypeValue === "numeric" ? "numeric" : "exact",
+    tolerance: readString(formData, "tolerance"),
+    isActive: parseBoolean(formData.get("isActive")),
+  };
+}
+
+function errorState(
+  values: CreateQuestionValues,
+  message: string,
+  fieldErrors?: Record<string, string>,
+): CreateQuestionState {
+  return {
+    status: "error",
+    message,
+    fieldErrors,
+    values,
+  };
+}
 
 function normalize(value: FormDataEntryValue | null) {
   const text = String(value ?? "").trim();
   return text.length > 0 ? text : null;
+}
+
+function normalizeOptionText(value: FormDataEntryValue | null) {
+  if (value == null) return null;
+  const text = String(value);
+  if (text.length === 0) return null;
+  // Keep whitespace-only values (e.g. a single space) as intentional blank option text.
+  return text.trim().length === 0 ? " " : text.trim();
 }
 
 function parseBoolean(value: FormDataEntryValue | null) {
@@ -77,6 +138,27 @@ function parseOptionalDifficulty(value: FormDataEntryValue | null): Difficulty |
     : null;
 }
 
+function parseOptionalPastPaper(
+  value: FormDataEntryValue | null,
+): "MSC" | "DSE" | "HKCEE" | "HKAE" | "other" | null {
+  const pastPaper = normalize(value);
+  if (!pastPaper) return null;
+  return pastPaper === "MSC" ||
+    pastPaper === "DSE" ||
+    pastPaper === "HKCEE" ||
+    pastPaper === "HKAE" ||
+    pastPaper === "other"
+    ? pastPaper
+    : null;
+}
+
+function parseOptionalPastPaperYear(value: FormDataEntryValue | null): number | null {
+  const normalized = normalize(value);
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isInteger(parsed) && parsed >= 2000 && parsed <= 2026 ? parsed : null;
+}
+
 function parseQuestionType(value: FormDataEntryValue | null): QuestionType | null {
   const type = normalize(value);
   if (!type) return null;
@@ -94,6 +176,8 @@ export async function createQuestionAction(
   _previousState: CreateQuestionState,
   formData: FormData,
 ): Promise<CreateQuestionState> {
+  const values = captureFormValues(formData);
+
   try {
     const admin = await requireAdmin();
 
@@ -101,6 +185,8 @@ export async function createQuestionAction(
     const formLevel = parseOptionalFormLevel(formData.get("formLevel"));
     const chapterName = normalize(formData.get("chapterName"));
     const difficulty = parseOptionalDifficulty(formData.get("difficulty"));
+    const pastPaper = parseOptionalPastPaper(formData.get("pastPaper"));
+    const pastPaperYear = parseOptionalPastPaperYear(formData.get("pastPaperYear"));
     const type = parseQuestionType(formData.get("type"));
     const contentText = normalize(formData.get("contentText"));
     const explanationText = normalize(formData.get("explanationText"));
@@ -132,6 +218,18 @@ export async function createQuestionAction(
       fieldErrors.formLevel = "Please choose a valid form.";
     }
 
+    if (normalize(formData.get("pastPaper")) && pastPaper === null) {
+      fieldErrors.pastPaper = "Please choose a valid past paper source.";
+    }
+
+    if (pastPaper && pastPaperYear === null) {
+      fieldErrors.pastPaperYear = "Please choose a year for this past paper.";
+    }
+
+    if (!pastPaper && normalize(formData.get("pastPaperYear"))) {
+      fieldErrors.pastPaperYear = "Choose a past paper source before choosing a year.";
+    }
+
     if (chapterName && !formLevel) {
       fieldErrors.chapterName = "Choose a form before choosing a chapter.";
     }
@@ -141,14 +239,17 @@ export async function createQuestionAction(
         "Please enter question text or upload a question image.";
     }
 
-    const optionValues = [0, 1, 2, 3]
-      .map((index) => ({
-        option_text: normalize(formData.get(`optionText${index}`)),
-        option_image_url: normalize(formData.get(`optionImageUrl${index}`)),
-        is_correct: parseBoolean(formData.get(`optionCorrect${index}`)),
-        sort_order: index,
-      }))
-      .filter((option) => option.option_text || option.option_image_url);
+    const rawOptions = [0, 1, 2, 3].map((index) => ({
+      label: String.fromCharCode(65 + index),
+      option_text: normalizeOptionText(formData.get(`optionText${index}`)),
+      option_image_url: normalize(formData.get(`optionImageUrl${index}`)),
+      is_correct: parseBoolean(formData.get(`optionCorrect${index}`)),
+      sort_order: index,
+    }));
+
+    const optionValues = rawOptions.filter(
+      (option) => option.option_text || option.option_image_url,
+    );
 
     const acceptedAnswersRaw = normalize(formData.get("acceptedAnswers"));
     const answerType = normalize(formData.get("answerType")) ?? "exact";
@@ -161,11 +262,23 @@ export async function createQuestionAction(
       : [];
 
     if (type === "mcq") {
-      if (optionValues.length < 2) {
+      const emptyOptions = rawOptions.filter(
+        (option) => !option.option_text && !option.option_image_url,
+      );
+
+      if (emptyOptions.length > 0) {
+        fieldErrors.mcqOptions = `Please fill in option content for ${emptyOptions
+          .map((option) => option.label)
+          .join(", ")}. Each option needs text or an image URL.`;
+      } else if (optionValues.length < 2) {
         fieldErrors.mcqOptions = "MCQ questions need at least 2 options.";
       }
 
-      if (optionValues.length > 0 && !optionValues.some((option) => option.is_correct)) {
+      if (
+        optionValues.length > 0 &&
+        !optionValues.some((option) => option.is_correct) &&
+        !fieldErrors.mcqOptions
+      ) {
         fieldErrors.mcqCorrect = "Please mark at least one correct option.";
       }
     }
@@ -186,11 +299,11 @@ export async function createQuestionAction(
     }
 
     if (Object.keys(fieldErrors).length > 0) {
-      return {
-        status: "error",
-        message: "Please fix the highlighted fields and try again.",
+      return errorState(
+        values,
+        "Please fix the highlighted fields and try again.",
         fieldErrors,
-      };
+      );
     }
 
     const supabase = await createClient();
@@ -203,29 +316,25 @@ export async function createQuestionAction(
         .single();
 
       if (topicError || !topicRecord) {
-        return {
-          status: "error",
-          message: "Please choose a valid topic.",
-          fieldErrors: { topicId: "Selected topic was not found." },
-        };
+        return errorState(values, "Please choose a valid topic.", {
+          topicId: "Selected topic was not found.",
+        });
       }
 
       if (formLevel !== null && topicRecord.form_level !== formLevel) {
-        return {
-          status: "error",
-          message: "The selected topic does not match the chosen form.",
-          fieldErrors: { topicId: "Selected topic does not belong to this form." },
-        };
+        return errorState(
+          values,
+          "The selected topic does not match the chosen form.",
+          { topicId: "Selected topic does not belong to this form." },
+        );
       }
 
       if (chapterName && topicRecord.chapter_name !== chapterName) {
-        return {
-          status: "error",
-          message: "The selected topic does not match the chosen chapter.",
-          fieldErrors: {
-            topicId: "Selected topic does not belong to this chapter.",
-          },
-        };
+        return errorState(
+          values,
+          "The selected topic does not match the chosen chapter.",
+          { topicId: "Selected topic does not belong to this chapter." },
+        );
       }
     }
 
@@ -249,6 +358,8 @@ export async function createQuestionAction(
         metadata: {
           formLevel,
           chapterName,
+          pastPaper,
+          pastPaperYear: pastPaper ? pastPaperYear : null,
         },
         created_by: admin.id,
         is_active: isActive,
@@ -257,25 +368,25 @@ export async function createQuestionAction(
       .single();
 
     if (questionError || !question) {
-      return {
-        status: "error",
-        message: `Failed to create question: ${questionError?.message ?? "Unknown error"}`,
-      };
+      return errorState(
+        values,
+        `Failed to create question: ${questionError?.message ?? "Unknown error"}`,
+      );
     }
 
     if (type === "mcq") {
       const { error: optionError } = await supabase.from("question_options").insert(
         optionValues.map((option) => ({
           question_id: question.id,
-          ...option,
+          option_text: option.option_text,
+          option_image_url: option.option_image_url,
+          is_correct: option.is_correct,
+          sort_order: option.sort_order,
         })),
       );
 
       if (optionError) {
-        return {
-          status: "error",
-          message: `Failed to save options: ${optionError.message}`,
-        };
+        return errorState(values, `Failed to save options: ${optionError.message}`);
       }
     }
 
@@ -290,29 +401,28 @@ export async function createQuestionAction(
       );
 
       if (ruleError) {
-        return {
-          status: "error",
-          message: `Failed to save accepted answers: ${ruleError.message}`,
-        };
+        return errorState(
+          values,
+          `Failed to save accepted answers: ${ruleError.message}`,
+        );
       }
     }
 
-    revalidatePath("/admin");
     revalidatePath("/admin/questions");
     revalidatePath("/admin/questions/list");
 
     return {
       status: "success",
       message: "Question created successfully.",
+      completedAt: Date.now(),
     };
   } catch (error) {
-    return {
-      status: "error",
-      message:
-        error instanceof Error
-          ? error.message
-          : "Something went wrong while creating the question.",
-    };
+    return errorState(
+      values,
+      error instanceof Error
+        ? error.message
+        : "Something went wrong while creating the question.",
+    );
   }
 }
 

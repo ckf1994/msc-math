@@ -1,6 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getRoleHome, isUserRole } from "@/lib/auth/roles";
-import { updateSession } from "@/lib/supabase/middleware";
+import {
+  hasSupabaseSessionCookie,
+  updateSession,
+} from "@/lib/supabase/middleware";
 
 const PUBLIC_ROUTES = ["/", "/auth/callback"];
 const AUTH_ROUTES = ["/auth/signout"];
@@ -21,15 +24,22 @@ function getRolePrefix(pathname: string): "student" | "teacher" | "admin" | null
 }
 
 export async function proxy(request: NextRequest) {
-  const { supabase, supabaseResponse, user } = await updateSession(request);
   const { pathname } = request.nextUrl;
+  const requiredRole = getRolePrefix(pathname);
+  const requireAuth =
+    pathname === "/auth/callback" ||
+    Boolean(requiredRole) ||
+    hasSupabaseSessionCookie(request);
+
+  const { supabase, supabaseResponse, user } = await updateSession(request, {
+    requireAuth,
+  });
 
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
     return supabaseResponse;
   }
 
   if (!user) {
-    const requiredRole = getRolePrefix(pathname);
     if (requiredRole && !isPublicRoute(pathname)) {
       const url = request.nextUrl.clone();
       url.pathname = "/";
@@ -39,28 +49,19 @@ export async function proxy(request: NextRequest) {
     return supabaseResponse;
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  const role = isUserRole(profile?.role) ? profile.role : null;
-
   if (pathname === "/") {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    const role = isUserRole(profile?.role) ? profile.role : null;
     if (role) {
       const url = request.nextUrl.clone();
       url.pathname = getRoleHome(role);
       return NextResponse.redirect(url);
     }
-    return supabaseResponse;
-  }
-
-  const requiredRole = getRolePrefix(pathname);
-  if (requiredRole && role && requiredRole !== role) {
-    const url = request.nextUrl.clone();
-    url.pathname = getRoleHome(role);
-    return NextResponse.redirect(url);
   }
 
   return supabaseResponse;

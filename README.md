@@ -12,10 +12,11 @@ Math learning platform for Munsang College (F.1–F.6), built with Next.js and S
   - question bank with image upload
   - quizzes, homework, mini games
   - badges with image upload
+  - MCQ option insights (live A/B/C/D rates)
 - Teacher tools:
   - class roster view
   - assignment creation
-  - assignment analytics
+  - assignment + MCQ analytics
 - Student tools:
   - assignments
   - practice generator
@@ -44,7 +45,8 @@ In Supabase Dashboard → **SQL Editor**, run in order:
 2. `supabase/migrations/002_question_assets_storage.sql`
 3. `supabase/migrations/003_optional_question_metadata.sql`
 4. `supabase/migrations/004_badge_assets_storage.sql`
-5. `supabase/seed.sql`
+5. `supabase/migrations/005_mcq_option_selection_stats.sql`
+6. `supabase/seed.sql`
 
 ### 4. Create test accounts
 
@@ -78,6 +80,15 @@ select c.id, p.id, 'student'
 from public.classes c, public.profiles p
 where c.name = '1A' and p.email = 'student@test.msc.edu.hk';
 ```
+
+### 4b. Seed 10 demo students (analytics)
+
+Either:
+
+1. Add `SUPABASE_SERVICE_ROLE_KEY` to `.env.local`, then run `npm run seed:demo-students`
+2. Or paste `supabase/seed_demo_students.sql` into Supabase → **SQL Editor** → Run
+
+Creates `student01`–`student10@test.msc.edu.hk` (password `DemoStudent123!`): **4 in 1A**, **6 in 1B**, with XP/streaks and quiz attempts for `/admin/analytics`.
 
 ### 5. (Later) Enable Google SSO
 

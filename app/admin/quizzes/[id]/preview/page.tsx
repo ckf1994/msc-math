@@ -118,7 +118,7 @@ export default async function AdminQuizPreviewPage({ params }: PageProps) {
   return (
     <div className="space-y-6">
       <Link
-        href="/admin/quizzes"
+        href="/admin/quizzes?tab=existing"
         className="inline-flex items-center gap-2 text-sm font-medium text-msc-muted hover:text-msc-ink"
       >
         <ChevronLeft className="h-4 w-4" />

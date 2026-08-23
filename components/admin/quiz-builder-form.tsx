@@ -1,33 +1,58 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import { createQuizAction } from "@/app/admin/quizzes/actions";
 import { initialContentFormState } from "@/components/admin/content-form-state";
+import {
+  QuestionContentPreview,
+  type PreviewableQuestion,
+} from "@/components/admin/question-content-preview";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { formatQuestionId } from "@/lib/questions/format-question-id";
 
-type QuestionOption = {
-  id: string;
-  type: "mcq" | "short_answer";
-  difficulty: "easy" | "medium" | "hard" | null;
-  content_text: string | null;
-  topic_name: string | null;
-};
+export type QuizBuilderQuestion = PreviewableQuestion;
 
-export function QuizBuilderForm({ questions }: { questions: QuestionOption[] }) {
+export function QuizBuilderForm({
+  questions,
+}: {
+  questions: QuizBuilderQuestion[];
+}) {
   const [state, formAction] = useActionState(
     createQuizAction,
     initialContentFormState,
   );
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const questionsById = useMemo(
+    () => new Map(questions.map((question) => [question.id, question])),
+    [questions],
+  );
+
+  const selectedQuestions = selectedIds
+    .map((id) => questionsById.get(id))
+    .filter((question): question is QuizBuilderQuestion => Boolean(question));
+
+  function toggleQuestion(questionId: string, checked: boolean) {
+    setSelectedIds((current) => {
+      if (checked) {
+        return current.includes(questionId) ? current : [...current, questionId];
+      }
+      return current.filter((id) => id !== questionId);
+    });
+  }
 
   return (
-    <form action={formAction} className="space-y-5">
+    <form action={formAction} className="w-full space-y-5">
       <Feedback state={state} />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field error={state.fieldErrors?.title}>
           <LabelText>Title</LabelText>
-          <input name="title" placeholder="Form 1 Quiz 1" className={fieldClassName(false)} />
+          <input
+            name="title"
+            placeholder="Form 1 Quiz 1"
+            className={fieldClassName(false)}
+          />
         </Field>
 
         <Field error={state.fieldErrors?.type}>
@@ -52,7 +77,11 @@ export function QuizBuilderForm({ questions }: { questions: QuestionOption[] }) 
       <div className="grid gap-4 sm:grid-cols-3">
         <Field error={state.fieldErrors?.timeLimitSeconds}>
           <LabelText>Time limit (seconds)</LabelText>
-          <input name="timeLimitSeconds" placeholder="600" className={fieldClassName(false)} />
+          <input
+            name="timeLimitSeconds"
+            placeholder="600"
+            className={fieldClassName(false)}
+          />
         </Field>
         <CheckField name="shuffleQuestions" label="Shuffle questions" defaultChecked />
         <CheckField name="shuffleOptions" label="Shuffle options" defaultChecked />
@@ -61,32 +90,93 @@ export function QuizBuilderForm({ questions }: { questions: QuestionOption[] }) 
       <CheckField name="isPublished" label="Published and ready to assign" />
 
       <Field error={state.fieldErrors?.questionIds}>
-        <LabelText>Choose questions</LabelText>
-        <div className="mt-2 max-h-80 space-y-3 overflow-y-auto rounded-2xl border border-gray-100 p-3">
-          {questions.map((question) => (
-            <label
-              key={question.id}
-              className="flex items-start gap-3 rounded-xl border border-gray-100 p-3"
-            >
-              <input
-                type="checkbox"
-                name="questionIds"
-                value={question.id}
-                className="mt-1 h-4 w-4 rounded border-gray-300 text-msc-red focus:ring-msc-red"
-              />
-              <div className="min-w-0">
-                <div className="flex flex-wrap gap-2">
-                  <Pill>{formatQuestionId(question.id)}</Pill>
-                  <Pill>{question.type === "mcq" ? "MCQ" : "Short answer"}</Pill>
-                  {question.difficulty ? <Pill>{question.difficulty}</Pill> : null}
-                  {question.topic_name ? <Pill>{question.topic_name}</Pill> : null}
-                </div>
-                <p className="mt-2 text-sm text-msc-ink">
-                  {question.content_text || "Image-only question"}
-                </p>
-              </div>
-            </label>
-          ))}
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <LabelText>Choose questions</LabelText>
+            <p className="mt-1 text-xs text-msc-muted">
+              Preview each question below and check the ones to include.
+            </p>
+          </div>
+          {selectedQuestions.length > 0 ? (
+            <span className="rounded-full bg-msc-red/5 px-3 py-1 text-xs font-semibold text-msc-ink">
+              {selectedQuestions.length} selected
+            </span>
+          ) : null}
+        </div>
+
+        {selectedQuestions.length > 0 ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {selectedQuestions.map((question, index) => (
+              <span
+                key={question.id}
+                className="rounded-full bg-msc-red px-3 py-1 text-xs font-semibold text-white"
+              >
+                {index + 1}. {formatQuestionId(question.id)}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="mt-3 space-y-4">
+          {questions.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center">
+              <p className="text-sm text-msc-muted">
+                No active questions in the bank yet.
+              </p>
+            </div>
+          ) : (
+            questions.map((question) => {
+              const checked = selectedIds.includes(question.id);
+              const selectedOrder = checked
+                ? selectedIds.indexOf(question.id) + 1
+                : null;
+
+              return (
+                <label
+                  key={question.id}
+                  className={`block cursor-pointer rounded-2xl border p-4 transition ${
+                    checked
+                      ? "border-msc-red/40 bg-msc-red/5 shadow-sm"
+                      : "border-gray-100 bg-white hover:border-gray-200"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      name="questionIds"
+                      value={question.id}
+                      checked={checked}
+                      onChange={(event) =>
+                        toggleQuestion(question.id, event.target.checked)
+                      }
+                      className="mt-1 h-4 w-4 rounded border-gray-300 text-msc-red focus:ring-msc-red"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {selectedOrder ? (
+                          <span className="rounded-full bg-msc-red px-2.5 py-1 text-xs font-semibold text-white">
+                            #{selectedOrder}
+                          </span>
+                        ) : null}
+                        <Pill>{formatQuestionId(question.id)}</Pill>
+                        <Pill>{question.type === "mcq" ? "MCQ" : "Short answer"}</Pill>
+                        {question.difficulty ? <Pill>{question.difficulty}</Pill> : null}
+                        {question.topic_name ? <Pill>{question.topic_name}</Pill> : null}
+                      </div>
+
+                      <div className="mt-3">
+                        <QuestionContentPreview
+                          question={question}
+                          framed={false}
+                          hideMeta
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </label>
+              );
+            })
+          )}
         </div>
       </Field>
 
@@ -180,4 +270,3 @@ function textareaClassName(hasError: boolean) {
       : "border-gray-200 focus:border-msc-red/50"
   }`;
 }
-

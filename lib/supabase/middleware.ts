@@ -1,7 +1,22 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-export async function updateSession(request: NextRequest) {
+export function hasSupabaseSessionCookie(request: NextRequest) {
+  return request.cookies.getAll().some(
+    (cookie) =>
+      cookie.name.startsWith("sb-") && cookie.name.includes("auth-token"),
+  );
+}
+
+type UpdateSessionOptions = {
+  /** When false, skip the remote getUser() call if there is no session cookie. */
+  requireAuth?: boolean;
+};
+
+export async function updateSession(
+  request: NextRequest,
+  options: UpdateSessionOptions = {},
+) {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -24,6 +39,11 @@ export async function updateSession(request: NextRequest) {
       },
     },
   );
+
+  const requireAuth = options.requireAuth ?? true;
+  if (!requireAuth && !hasSupabaseSessionCookie(request)) {
+    return { supabase, supabaseResponse, user: null };
+  }
 
   const {
     data: { user },

@@ -2,6 +2,7 @@ export type UserRole = "student" | "teacher" | "admin";
 
 export type QuestionType = "mcq" | "short_answer";
 export type Difficulty = "easy" | "medium" | "hard";
+export type PastPaperSource = "MSC" | "DSE" | "HKCEE" | "HKAE" | "other";
 export type QuizType = "quiz" | "homework" | "game";
 export type AttemptStatus = "in_progress" | "completed" | "abandoned";
 

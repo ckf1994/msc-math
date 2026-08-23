@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import type { UserRole } from "@/lib/auth/roles";
 
@@ -13,12 +14,13 @@ export type Profile = {
   total_xp: number;
 };
 
-export async function getProfile(): Promise<Profile | null> {
+export const getProfile = cache(async (): Promise<Profile | null> => {
   const supabase = await createClient();
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
 
+  const user = session?.user;
   if (!user) return null;
 
   const { data, error } = await supabase
@@ -31,4 +33,4 @@ export async function getProfile(): Promise<Profile | null> {
 
   if (error || !data) return null;
   return data as Profile;
-}
+});

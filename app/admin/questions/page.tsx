@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BookOpen, Eye, PlusCircle } from "lucide-react";
+import { BarChart3, BookOpen, Eye, PlusCircle } from "lucide-react";
 import { requireAdmin } from "@/lib/auth/require-admin";
 
 export default async function AdminQuestionsPage() {
@@ -16,7 +16,7 @@ export default async function AdminQuestionsPage() {
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-3">
         <QuestionBankCard
           href="/admin/questions/new"
           title="Add Question"
@@ -30,6 +30,13 @@ export default async function AdminQuestionsPage() {
           description="Browse the question bank with filters for form, chapter, topic, type, difficulty, and active status."
           icon={<Eye className="h-6 w-6 text-msc-red" />}
           cta="Open Question List"
+        />
+        <QuestionBankCard
+          href="/admin/questions/insights"
+          title="MCQ Insights"
+          description="Live A/B/C/D selection rates and correct rates from every student submission."
+          icon={<BarChart3 className="h-6 w-6 text-msc-red" />}
+          cta="Open MCQ Insights"
         />
       </div>
     </div>

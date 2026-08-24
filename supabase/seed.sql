@@ -201,11 +201,103 @@ begin
 end $$;
 
 -- Starter badge
-insert into public.badges (name, description, criteria_type, criteria_value, xp_reward)
+insert into public.badges (name, description, image_url, criteria_type, criteria_value, xp_reward)
 values (
   'First Steps',
   'Complete your first quiz on MSC Math.',
+  '/badges/junk-boat.png',
   'completion',
   '{"quizzes_completed": 1}',
   50
 );
+
+insert into public.badges (name, description, image_url, criteria_type, criteria_value, xp_reward)
+values
+  (
+    'Pythagoras Pro',
+    'Score 90% or higher on a Pythagoras-themed quiz.',
+    '/badges/pythagoras-rainbow.png',
+    'score',
+    '{"min_score": 90}',
+    100
+  ),
+  (
+    'Book of Wisdom',
+    'Complete 10 quizzes to unlock the Book of Wisdom.',
+    '/badges/book-of-wisdom.png',
+    'completion',
+    '{"completions_required": 10}',
+    150
+  ),
+  (
+    'Number Pyramid',
+    'Reach 80% or higher on a number skills quiz.',
+    '/badges/number-pyramid.png',
+    'score',
+    '{"min_score": 80}',
+    80
+  ),
+  (
+    'Lighthouse Keeper',
+    'Keep a 7-day learning streak.',
+    '/badges/lighthouse.png',
+    'streak',
+    '{"streak_days": 7}',
+    120
+  ),
+  (
+    'Munsang Banner',
+    'Show school spirit by completing your first assignment.',
+    '/badges/munsang-banner.png',
+    'completion',
+    '{"completions_required": 1}',
+    60
+  ),
+  (
+    'Munsang Spirit',
+    'Wear the spirit — maintain a 14-day streak.',
+    '/badges/munsang-jacket.png',
+    'streak',
+    '{"streak_days": 14}',
+    200
+  ),
+  (
+    'Munsang Gate',
+    'Pass through the gate: complete 5 quizzes.',
+    '/badges/munsang-gate.png',
+    'completion',
+    '{"completions_required": 5}',
+    100
+  ),
+  (
+    'Minsheng Torch',
+    'Light the torch with a 3-day streak.',
+    '/badges/minsheng-torch.png',
+    'streak',
+    '{"streak_days": 3}',
+    50
+  ),
+  (
+    'Centenary Scholar',
+    'Score a perfect 100% on any quiz.',
+    '/badges/centenary-stand.png',
+    'score',
+    '{"min_score": 100}',
+    250
+  ),
+  (
+    'Speech Day Star',
+    'Stand out on Speech Day — earn this special MSC badge.',
+    '/badges/speech-day-2026.png',
+    'custom',
+    '{"notes": "Awarded by teachers for outstanding performance."}',
+    300
+  ),
+  (
+    'Campus Champion',
+    'Master the campus challenge: complete 20 quizzes.',
+    '/badges/campus-aerial.png',
+    'completion',
+    '{"completions_required": 20}',
+    300
+  );

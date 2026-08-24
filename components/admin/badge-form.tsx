@@ -1,27 +1,93 @@
 "use client";
 
-import { useActionState, useState } from "react";
-import { createBadgeAction } from "@/app/admin/badges/actions";
-import { initialContentFormState } from "@/components/admin/content-form-state";
+import { useActionState, useEffect, useState } from "react";
+import {
+  createBadgeAction,
+  updateBadgeAction,
+} from "@/app/admin/badges/actions";
+import {
+  initialContentFormState,
+  type ContentFormState,
+} from "@/components/admin/content-form-state";
+import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/ui/submit-button";
 
-export function BadgeForm() {
-  const [state, formAction] = useActionState(
-    createBadgeAction,
-    initialContentFormState,
-  );
+export type EditableBadge = {
+  id: string;
+  name: string;
+  description: string | null;
+  image_url: string | null;
+  criteria_type: "streak" | "score" | "completion" | "custom";
+  criteria_value: Record<string, unknown>;
+  xp_reward: number;
+};
+
+type BadgeFormProps = {
+  badge?: EditableBadge | null;
+  onCancelEdit?: () => void;
+  onSaved?: () => void;
+};
+
+function criteriaTargetValue(badge: EditableBadge | null | undefined) {
+  if (!badge) return "";
+  const value = badge.criteria_value;
+  if (badge.criteria_type === "streak") {
+    return String(value.streak_days ?? "");
+  }
+  if (badge.criteria_type === "score") {
+    return String(value.min_score ?? "");
+  }
+  if (badge.criteria_type === "completion") {
+    return String(
+      value.completions_required ?? value.quizzes_completed ?? "",
+    );
+  }
+  return "";
+}
+
+function customCriteriaNotes(badge: EditableBadge | null | undefined) {
+  if (!badge || badge.criteria_type !== "custom") return "";
+  return String(badge.criteria_value.notes ?? "");
+}
+
+export function BadgeForm({ badge, onCancelEdit, onSaved }: BadgeFormProps) {
+  const isEditing = Boolean(badge);
+  const action = isEditing ? updateBadgeAction : createBadgeAction;
+  const [state, formAction] = useActionState(action, initialContentFormState);
   const [criteriaType, setCriteriaType] = useState<
     "streak" | "score" | "completion" | "custom"
-  >("completion");
+  >(badge?.criteria_type ?? "completion");
+  const [formKey, setFormKey] = useState(badge?.id ?? "create");
+
+  useEffect(() => {
+    setCriteriaType(badge?.criteria_type ?? "completion");
+    setFormKey(badge?.id ?? "create");
+  }, [badge]);
+
+  useEffect(() => {
+    if (state.status === "success") {
+      onSaved?.();
+      if (!isEditing) {
+        setFormKey(`create-${Date.now()}`);
+        setCriteriaType("completion");
+      }
+    }
+  }, [state, isEditing, onSaved]);
 
   return (
-    <form action={formAction} className="space-y-5">
+    <form key={formKey} action={formAction} className="space-y-5">
+      {badge ? <input type="hidden" name="badgeId" value={badge.id} /> : null}
       <Feedback state={state} />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field error={state.fieldErrors?.name}>
           <LabelText>Badge name</LabelText>
-          <input name="name" placeholder="Speed Star" className={fieldClassName(false)} />
+          <input
+            name="name"
+            defaultValue={badge?.name ?? ""}
+            placeholder="Speed Star"
+            className={fieldClassName(Boolean(state.fieldErrors?.name))}
+          />
         </Field>
         <Field error={state.fieldErrors?.criteriaType}>
           <LabelText>Criteria type</LabelText>
@@ -33,7 +99,7 @@ export function BadgeForm() {
                 event.target.value as "streak" | "score" | "completion" | "custom",
               )
             }
-            className={fieldClassName(false)}
+            className={fieldClassName(Boolean(state.fieldErrors?.criteriaType))}
           >
             <option value="completion">Completion</option>
             <option value="streak">Streak</option>
@@ -48,6 +114,7 @@ export function BadgeForm() {
         <textarea
           name="description"
           rows={3}
+          defaultValue={badge?.description ?? ""}
           placeholder="What does students need to achieve?"
           className={textareaClassName(false)}
         />
@@ -60,8 +127,11 @@ export function BadgeForm() {
             <textarea
               name="customCriteria"
               rows={3}
+              defaultValue={customCriteriaNotes(badge)}
               placeholder="Describe the badge rule for admin reference"
-              className={textareaClassName(false)}
+              className={textareaClassName(
+                Boolean(state.fieldErrors?.customCriteria),
+              )}
             />
           </Field>
         ) : (
@@ -69,6 +139,7 @@ export function BadgeForm() {
             <LabelText>Target value</LabelText>
             <input
               name="targetValue"
+              defaultValue={criteriaTargetValue(badge)}
               placeholder={
                 criteriaType === "streak"
                   ? "7"
@@ -76,19 +147,36 @@ export function BadgeForm() {
                     ? "90"
                     : "1"
               }
-              className={fieldClassName(false)}
+              className={fieldClassName(Boolean(state.fieldErrors?.targetValue))}
             />
           </Field>
         )}
 
         <Field error={state.fieldErrors?.xpReward}>
           <LabelText>XP reward</LabelText>
-          <input name="xpReward" defaultValue="50" className={fieldClassName(false)} />
+          <input
+            name="xpReward"
+            defaultValue={String(badge?.xp_reward ?? 50)}
+            className={fieldClassName(Boolean(state.fieldErrors?.xpReward))}
+          />
         </Field>
       </div>
 
       <Field error={state.fieldErrors?.imageFile}>
-        <LabelText>Badge image</LabelText>
+        <LabelText>{isEditing ? "Replace badge image" : "Badge image"}</LabelText>
+        {badge?.image_url ? (
+          <div className="mt-2 flex items-center gap-3 rounded-xl bg-gray-50 p-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={badge.image_url}
+              alt={badge.name}
+              className="h-16 w-16 rounded-xl object-contain"
+            />
+            <p className="text-xs text-msc-muted">
+              Current image. Upload a new file only if you want to replace it.
+            </p>
+          </div>
+        ) : null}
         <input
           type="file"
           name="imageFile"
@@ -96,22 +184,35 @@ export function BadgeForm() {
           className={fileClassName(Boolean(state.fieldErrors?.imageFile))}
         />
         <p className="mt-2 text-xs text-msc-muted">
-          Optional. Upload a badge icon now or replace it later.
+          {isEditing
+            ? "Optional. Leave empty to keep the current image."
+            : "Optional. Upload a badge icon now or replace it later."}
         </p>
       </Field>
 
-      <SubmitButton className="w-full" pendingText="Creating badge">
-        Create badge
-      </SubmitButton>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <SubmitButton
+          className="w-full sm:flex-1"
+          pendingText={isEditing ? "Saving badge" : "Creating badge"}
+        >
+          {isEditing ? "Save changes" : "Create badge"}
+        </SubmitButton>
+        {isEditing && onCancelEdit ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full sm:w-auto"
+            onClick={onCancelEdit}
+          >
+            Cancel
+          </Button>
+        ) : null}
+      </div>
     </form>
   );
 }
 
-function Feedback({
-  state,
-}: {
-  state: { status: "idle" | "success" | "error"; message?: string };
-}) {
+function Feedback({ state }: { state: ContentFormState }) {
   if (!state.message) return null;
   return (
     <div
@@ -168,4 +269,3 @@ function fileClassName(hasError: boolean) {
       : "border-gray-200 focus:border-msc-red/50"
   } focus:ring-2 focus:ring-msc-red/10`;
 }
-

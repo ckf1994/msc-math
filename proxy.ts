@@ -4,6 +4,11 @@ import {
   hasSupabaseSessionCookie,
   updateSession,
 } from "@/lib/supabase/middleware";
+import {
+  parseViewAsRole,
+  resolveEffectiveRole,
+  VIEW_AS_COOKIE,
+} from "@/lib/auth/view-as";
 
 const PUBLIC_ROUTES = ["/", "/auth/callback"];
 const AUTH_ROUTES = ["/auth/signout"];
@@ -56,8 +61,13 @@ export async function proxy(request: NextRequest) {
       .eq("id", user.id)
       .single();
 
-    const role = isUserRole(profile?.role) ? profile.role : null;
-    if (role) {
+    const realRole = isUserRole(profile?.role) ? profile.role : null;
+    if (realRole) {
+      const viewAs =
+        realRole === "admin"
+          ? parseViewAsRole(request.cookies.get(VIEW_AS_COOKIE)?.value)
+          : null;
+      const role = resolveEffectiveRole(realRole, viewAs);
       const url = request.nextUrl.clone();
       url.pathname = getRoleHome(role);
       return NextResponse.redirect(url);
@@ -72,4 +82,3 @@ export const config = {
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
-

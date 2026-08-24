@@ -13,6 +13,7 @@ import type { Profile } from "@/lib/auth/get-profile";
 import type { UserRole } from "@/lib/auth/roles";
 import { Button } from "@/components/ui/button";
 import LoadingQuote from "@/components/auth/loading-quote";
+import { RolePreviewBar } from "@/components/shell/role-preview-bar";
 import type { ComponentType, ReactNode } from "react";
 
 type AppShellProps = {
@@ -28,6 +29,8 @@ function roleLabel(role: UserRole) {
 }
 
 export async function AppShell({ profile, role, children }: AppShellProps) {
+  const showRoleBar = profile.real_role === "admin";
+
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-20 border-b border-gray-100 bg-white">
@@ -41,7 +44,9 @@ export async function AppShell({ profile, role, children }: AppShellProps) {
                 MSC Math
               </div>
               <div className="truncate text-xs text-msc-muted">
-                {roleLabel(role)} · {profile.full_name || roleLabel(role)}
+                {roleLabel(role)}
+                {profile.is_viewing_as ? " (preview)" : ""} ·{" "}
+                {profile.full_name || roleLabel(role)}
               </div>
             </div>
           </div>
@@ -107,8 +112,12 @@ export async function AppShell({ profile, role, children }: AppShellProps) {
         </div>
       </div>
 
-      {/* Mobile bottom nav */}
-      <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-gray-100 bg-white md:hidden">
+      {/* Mobile bottom nav — sits above admin role bar when present */}
+      <nav
+        className={`fixed left-0 right-0 z-30 border-t border-gray-100 bg-white md:hidden ${
+          showRoleBar ? "bottom-12" : "bottom-0"
+        }`}
+      >
         <div className="mx-auto flex max-w-7xl justify-around px-3 py-2">
           {getMobileNav(role).map((item) => (
             <Link
@@ -122,7 +131,21 @@ export async function AppShell({ profile, role, children }: AppShellProps) {
           ))}
         </div>
       </nav>
-      <div className="h-16 md:hidden" />
+
+      {showRoleBar ? (
+        <RolePreviewBar
+          activeRole={role}
+          isViewingAs={profile.is_viewing_as}
+        />
+      ) : null}
+
+      <div
+        className={
+          showRoleBar
+            ? "h-28 md:h-12"
+            : "h-16 md:h-0"
+        }
+      />
     </div>
   );
 }

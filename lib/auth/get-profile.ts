@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import type { UserRole } from "@/lib/auth/roles";
 import {
+  canUseRolePreview,
   parseViewAsRole,
   resolveEffectiveRole,
   VIEW_AS_COOKIE,
@@ -45,7 +46,7 @@ export const getProfile = cache(async (): Promise<Profile | null> => {
 
   const realRole = data.role as UserRole;
   let viewAs: UserRole | null = null;
-  if (realRole === "admin") {
+  if (canUseRolePreview(realRole)) {
     const cookieStore = await cookies();
     viewAs = parseViewAsRole(cookieStore.get(VIEW_AS_COOKIE)?.value);
   }
@@ -62,6 +63,6 @@ export const getProfile = cache(async (): Promise<Profile | null> => {
     current_streak: data.current_streak,
     longest_streak: data.longest_streak,
     total_xp: data.total_xp,
-    is_viewing_as: realRole === "admin" && effectiveRole !== realRole,
+    is_viewing_as: effectiveRole !== realRole,
   };
 });

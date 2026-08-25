@@ -14,6 +14,7 @@ import type { UserRole } from "@/lib/auth/roles";
 import { Button } from "@/components/ui/button";
 import LoadingQuote from "@/components/auth/loading-quote";
 import { RolePreviewBar } from "@/components/shell/role-preview-bar";
+import { canUseRolePreview } from "@/lib/auth/view-as";
 import type { ComponentType, ReactNode } from "react";
 
 type AppShellProps = {
@@ -29,7 +30,7 @@ function roleLabel(role: UserRole) {
 }
 
 export async function AppShell({ profile, role, children }: AppShellProps) {
-  const showRoleBar = profile.real_role === "admin";
+  const showRoleBar = canUseRolePreview(profile.real_role);
 
   return (
     <div className="min-h-screen bg-background">
@@ -134,6 +135,7 @@ export async function AppShell({ profile, role, children }: AppShellProps) {
 
       {showRoleBar ? (
         <RolePreviewBar
+          realRole={profile.real_role}
           activeRole={role}
           isViewingAs={profile.is_viewing_as}
         />

@@ -5,6 +5,7 @@ import {
   updateSession,
 } from "@/lib/supabase/middleware";
 import {
+  canUseRolePreview,
   parseViewAsRole,
   resolveEffectiveRole,
   VIEW_AS_COOKIE,
@@ -63,10 +64,9 @@ export async function proxy(request: NextRequest) {
 
     const realRole = isUserRole(profile?.role) ? profile.role : null;
     if (realRole) {
-      const viewAs =
-        realRole === "admin"
-          ? parseViewAsRole(request.cookies.get(VIEW_AS_COOKIE)?.value)
-          : null;
+      const viewAs = canUseRolePreview(realRole)
+        ? parseViewAsRole(request.cookies.get(VIEW_AS_COOKIE)?.value)
+        : null;
       const role = resolveEffectiveRole(realRole, viewAs);
       const url = request.nextUrl.clone();
       url.pathname = getRoleHome(role);

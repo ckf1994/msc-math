@@ -7,14 +7,30 @@ export function parseViewAsRole(value: string | undefined | null): UserRole | nu
   return value;
 }
 
+export function allowedViewAsRoles(realRole: UserRole): UserRole[] {
+  if (realRole === "admin") return ["admin", "teacher", "student"];
+  if (realRole === "teacher") return ["teacher", "student"];
+  return [];
+}
+
+export function isAllowedViewAs(realRole: UserRole, viewAs: UserRole | null) {
+  if (!viewAs) return true;
+  return allowedViewAsRoles(realRole).includes(viewAs);
+}
+
 export function resolveEffectiveRole(
   realRole: UserRole,
   viewAs: UserRole | null,
 ): UserRole {
-  if (realRole !== "admin" || !viewAs) return realRole;
+  if (!viewAs || viewAs === realRole) return realRole;
+  if (!isAllowedViewAs(realRole, viewAs)) return realRole;
   return viewAs;
 }
 
 export function viewAsHome(role: UserRole) {
   return getRoleHome(role);
+}
+
+export function canUseRolePreview(realRole: UserRole) {
+  return realRole === "admin" || realRole === "teacher";
 }
